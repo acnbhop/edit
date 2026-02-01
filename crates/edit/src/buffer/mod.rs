@@ -2256,9 +2256,35 @@ impl TextBuffer {
     /// If there's a current selection, it will be deleted and `cursor_movements` ignored.
     /// The selection is cleared after the call.
     /// Deletes characters from the buffer based on a delta from the cursor.
-    pub fn delete(&mut self, granularity: CursorMovement, delta: CoordType) {
+    pub fn delete(&mut self, granularity: CursorMovement, mut delta: CoordType) {
         if delta == 0 {
             return;
+        }
+
+        if delta == -1
+            && matches!(granularity, CursorMovement::Grapheme)
+            && !self.indent_with_tabs
+            && self.selection.is_none()
+        {
+            let indent_end = self.indent_end_logical_pos();
+            if self.cursor.logical_pos.y == indent_end.y && self.cursor.logical_pos.x <= indent_end.x {
+                let col = self.cursor.logical_pos.x;
+                if col > 0 {
+                    let tab_size = self.tab_size;
+                    let target_col = (col - 1) / tab_size * tab_size;
+                    let to_delete = col - target_col;
+
+                    if to_delete > 1 {
+                        let chunk = self.read_backward(self.cursor.offset);
+                        if chunk.len() >= to_delete as usize {
+                            let region = &chunk[chunk.len() - to_delete as usize..];
+                            if region.iter().all(|&b| b == b' ') {
+                                delta = -(to_delete as CoordType);
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         let mut beg;
